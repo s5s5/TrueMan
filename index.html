@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no">
     <title>是男人坚持20秒</title>
-    <!-- Phaser 3 - 最流行的 HTML5 游戏框架 -->
+    <!-- Phaser 3 -->
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.70.0/dist/phaser.min.js"></script>
     <style>
         * {
@@ -19,6 +19,8 @@
             overflow: hidden;
             background: #1a1a2e;
             font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            /* 防止移动端触摸引起的回弹效果 */
+            overscroll-behavior: none;
         }
 
         .game-container {
@@ -41,6 +43,7 @@
             color: #fff;
             z-index: 100;
             background: linear-gradient(180deg, rgba(0,0,0,0.6) 0%, transparent 100%);
+            pointer-events: none; /* 让点击穿透 */
         }
 
         .header h1 {
@@ -68,6 +71,7 @@
             color: #fff;
             text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
             z-index: 100;
+            pointer-events: none;
         }
 
         .timer-display span {
@@ -121,323 +125,392 @@
     </style>
 </head>
 <body>
-    <div class="game-container">
-        <div class="header">
-            <h1>🎮 是男人坚持20秒</h1>
-            <p class="tips">📱 手机倾斜 / ⌨️ 方向键控制</p>
-        </div>
-
-        <div id="game-canvas"></div>
-
-        <div class="timer-display">
-            ⏱️ <span id="time-display">0</span> 秒
-        </div>
+<div class="game-container">
+    <div class="header">
+        <h1>🎮 是男人坚持20秒</h1>
     </div>
 
-    <button type="button" id="restart-btn">
-        💪 再来一次！
-        <span class="result-time" id="result-time"></span>
-        <span class="result-msg" id="result-msg"></span>
-    </button>
+    <div id="game-canvas"></div>
 
-    <script>
-    /**
-     * 是男人坚持20秒 - Phaser 3 重制版
-     */
-    (function() {
-        'use strict';
+    <div class="timer-display">
+        ⏱️ <span id="time-display">0</span> 秒
+    </div>
+</div>
 
-        // ==================== 游戏配置 ====================
-        const CONFIG = {
-            width: 320,
-            height: 320,
-            playerSize: 22,
-            playerSpeed: 200,
-            ballSize: 12,
-            ballSpeed: 150,
-            ballSpawnInterval: 800,
-            ballColors: [0xFF0000, 0xFF7F00, 0xFFFF00, 0x00FF00, 0x007FFF, 0x00FFFF, 0xFF00FF, 0xFFFFFF]
+<button type="button" id="restart-btn">
+    💪 再来一次！
+    <span class="result-time" id="result-time"></span>
+    <span class="result-msg" id="result-msg"></span>
+</button>
+
+<script>
+  /**
+   * 是男人坚持20秒 - Phaser 3 改进版
+   */
+  (function() {
+    'use strict';
+
+    // ==================== 游戏配置 ====================
+    const CONFIG = {
+      width: 320,
+      height: 320,
+      playerSize: 22,
+      playerMaxSpeed: 400,
+      playerAccel: 1500,
+      playerDrag: 1000,
+      ballSize: 12,
+      ballSpeed: 50,
+      ballSpawnInterval: 1000,
+      ballColors: [0xFF0000, 0xFF7F00, 0xFFFF00, 0x00FF00, 0x007FFF, 0x00FFFF, 0xFF00FF, 0xFFFFFF]
+    };
+
+    // ==================== 游戏状态 ====================
+    let gameTime = 0;
+    let isGameOver = false;
+    let ballSpawnTimer = null;
+    let gameTimeTimer = null;
+    // hasExploded 变量不再需要，因为现在是循环触发
+
+    // ==================== DOM 元素 ====================
+    const timeDisplay = document.getElementById('time-display');
+    const restartBtn = document.getElementById('restart-btn');
+    const resultTime = document.getElementById('result-time');
+    const resultMsg = document.getElementById('result-msg');
+
+    // ==================== 主游戏场景 ====================
+    class GameScene extends Phaser.Scene {
+      constructor() {
+        super({ key: 'GameScene' });
+        this.player = null;
+        this.balls = null;
+        this.cursors = null;
+        this.wasd = null;
+        // 保存监听器引用以便清理
+        this.orientationHandler = null;
+      }
+
+      create() {
+        // 确保之前的监听器被清理
+        this.cleanupListeners();
+        // 监听场景关闭事件，确保清理
+        this.events.on('shutdown', this.cleanupListeners, this);
+        this.events.on('destroy', this.cleanupListeners, this);
+
+        // 设置背景
+        this.cameras.main.setBackgroundColor('#24292F');
+
+        // 创建玩家
+        this.player = this.add.rectangle(
+          CONFIG.width / 2,
+          CONFIG.height / 2,
+          CONFIG.playerSize,
+          CONFIG.playerSize,
+          0xFFFFFF
+        );
+        this.physics.add.existing(this.player);
+        this.player.body.setCollideWorldBounds(true);
+
+        this.player.body.setMaxVelocity(CONFIG.playerMaxSpeed);
+        this.player.body.setDrag(CONFIG.playerDrag);
+
+        // 添加玩家文字
+        this.playerText = this.add.text(
+          CONFIG.width / 2,
+          CONFIG.height / 2,
+          '龍',
+          { fontSize: '14px', fontFamily: 'sans-serif', color: '#000' }
+        ).setOrigin(0.5);
+
+        // 创建小球组
+        this.balls = this.physics.add.group();
+
+        // 设置碰撞检测
+        this.physics.add.overlap(this.player, this.balls, this.hitBall, null, this);
+
+        // 键盘控制
+        this.cursors = this.input.keyboard.createCursorKeys();
+        this.wasd = this.input.keyboard.addKeys({
+          up: Phaser.Input.Keyboard.KeyCodes.W,
+          down: Phaser.Input.Keyboard.KeyCodes.S,
+          left: Phaser.Input.Keyboard.KeyCodes.A,
+          right: Phaser.Input.Keyboard.KeyCodes.D
+        });
+
+        // 陀螺仪控制
+        this.setupGyroscope();
+
+        // 开始游戏
+        this.startGame();
+      }
+
+      update() {
+        if (isGameOver) return;
+
+        const body = this.player.body;
+
+        // 重置加速度
+        body.setAcceleration(0);
+
+        // 左右移动
+        if (this.cursors.left.isDown || this.wasd.left.isDown) {
+          body.setAccelerationX(-CONFIG.playerAccel);
+        } else if (this.cursors.right.isDown || this.wasd.right.isDown) {
+          body.setAccelerationX(CONFIG.playerAccel);
+        }
+
+        // 上下移动
+        if (this.cursors.up.isDown || this.wasd.up.isDown) {
+          body.setAccelerationY(-CONFIG.playerAccel);
+        } else if (this.cursors.down.isDown || this.wasd.down.isDown) {
+          body.setAccelerationY(CONFIG.playerAccel);
+        }
+
+        // 同步玩家文字位置
+        this.playerText.setPosition(this.player.x, this.player.y);
+      }
+
+      checkGameEvents() {
+        // 修改为每隔 20 秒触发一次 (20, 40, 60...)
+        if (gameTime > 0 && gameTime % 20 === 0) {
+          this.triggerExplosion();
+        }
+      }
+
+      triggerExplosion() {
+        // 震动屏幕效果
+        this.cameras.main.shake(500, 0.05);
+
+        // 闪光效果
+        this.cameras.main.flash(500, 255, 255, 255);
+
+        // 所有小球爆炸
+        const balls = this.balls.getChildren();
+
+        // 必须复制数组，因为destroy会改变原数组长度
+        [...balls].forEach(ball => {
+          // 禁用物理
+          ball.body.enable = false;
+
+          // 爆炸动画：变大并消失
+          this.tweens.add({
+            targets: ball,
+            scale: { from: 1, to: 4 },
+            alpha: { from: 1, to: 0 },
+            angle: 180,
+            duration: 400,
+            ease: 'Power2',
+            onComplete: () => {
+              ball.destroy();
+            }
+          });
+        });
+
+        // 显示提示文字
+        const text = this.add.text(CONFIG.width/2, CONFIG.height/2, "BOOM!", {
+          fontSize: '64px',
+          fontStyle: 'bold',
+          color: '#ff0000',
+          stroke: '#ffffff',
+          strokeThickness: 4
+        }).setOrigin(0.5).setAlpha(0).setScale(0.5);
+
+        this.tweens.add({
+          targets: text,
+          alpha: 1,
+          scale: 1.5,
+          duration: 300,
+          yoyo: true,
+          onComplete: () => text.destroy()
+        });
+      }
+
+      // 清理监听器方法
+      cleanupListeners() {
+        if (this.orientationHandler) {
+          window.removeEventListener('deviceorientation', this.orientationHandler);
+          this.orientationHandler = null;
+        }
+      }
+
+      setupGyroscope() {
+        const self = this;
+
+        // 保存引用到 this.orientationHandler
+        this.orientationHandler = (event) => {
+          if (isGameOver || !self.player || !self.player.body) return;
+
+          let beta = event.beta;
+          let gamma = event.gamma;
+
+          if (beta === null || gamma === null) return;
+
+          const maxTilt = 30;
+          beta = Phaser.Math.Clamp(beta, -maxTilt, maxTilt);
+          gamma = Phaser.Math.Clamp(gamma, -maxTilt, maxTilt);
+
+          const vx = (gamma / maxTilt) * CONFIG.playerMaxSpeed;
+          const vy = (beta / maxTilt) * CONFIG.playerMaxSpeed;
+
+          self.player.body.setVelocity(vx, vy);
         };
 
-        // ==================== 游戏状态 ====================
-        let gameTime = 0;
-        let isGameOver = false;
-        let ballSpawnTimer = null;
-        let gameTimeTimer = null;
-
-        // ==================== DOM 元素 ====================
-        const timeDisplay = document.getElementById('time-display');
-        const restartBtn = document.getElementById('restart-btn');
-        const resultTime = document.getElementById('result-time');
-        const resultMsg = document.getElementById('result-msg');
-
-        // ==================== 主游戏场景 ====================
-        class GameScene extends Phaser.Scene {
-            constructor() {
-                super({ key: 'GameScene' });
-                this.player = null;
-                this.balls = null;
-                this.cursors = null;
-                this.wasd = null;
-            }
-
-            create() {
-                // 设置背景
-                this.cameras.main.setBackgroundColor('#24292F');
-
-                // 创建玩家
-                this.player = this.add.rectangle(
-                    CONFIG.width / 2,
-                    CONFIG.height / 2,
-                    CONFIG.playerSize,
-                    CONFIG.playerSize,
-                    0xFFFFFF
-                );
-                this.physics.add.existing(this.player);
-                this.player.body.setCollideWorldBounds(true);
-
-                // 添加玩家文字
-                this.playerText = this.add.text(
-                    CONFIG.width / 2,
-                    CONFIG.height / 2,
-                    '龍',
-                    { fontSize: '14px', fontFamily: 'sans-serif', color: '#000' }
-                ).setOrigin(0.5);
-
-                // 创建小球组
-                this.balls = this.physics.add.group();
-
-                // 设置碰撞检测
-                this.physics.add.overlap(this.player, this.balls, this.hitBall, null, this);
-
-                // 键盘控制
-                this.cursors = this.input.keyboard.createCursorKeys();
-                this.wasd = this.input.keyboard.addKeys({
-                    up: Phaser.Input.Keyboard.KeyCodes.W,
-                    down: Phaser.Input.Keyboard.KeyCodes.S,
-                    left: Phaser.Input.Keyboard.KeyCodes.A,
-                    right: Phaser.Input.Keyboard.KeyCodes.D
-                });
-
-                // 陀螺仪控制
-                this.setupGyroscope();
-
-                // 开始游戏
-                this.startGame();
-            }
-
-            update() {
-                if (isGameOver) return;
-
-                const body = this.player.body;
-                const speed = CONFIG.playerSpeed;
-
-                // 重置速度
-                body.setVelocity(0);
-
-                // 键盘控制
-                if (this.cursors.left.isDown || this.wasd.left.isDown) {
-                    body.setVelocityX(-speed);
-                } else if (this.cursors.right.isDown || this.wasd.right.isDown) {
-                    body.setVelocityX(speed);
+        if (typeof DeviceOrientationEvent !== 'undefined' &&
+          typeof DeviceOrientationEvent.requestPermission === 'function') {
+          // iOS 权限请求逻辑
+          const permHandler = () => {
+            DeviceOrientationEvent.requestPermission()
+              .then(response => {
+                if (response === 'granted') {
+                  window.addEventListener('deviceorientation', self.orientationHandler);
                 }
+              })
+              .catch(console.error);
+          };
+          // 注意：这里的 click 监听器是一次性的，不需要太担心清理，但最好也管理
+          document.body.addEventListener('click', permHandler, { once: true });
+        } else {
+          window.addEventListener('deviceorientation', this.orientationHandler);
+        }
+      }
 
-                if (this.cursors.up.isDown || this.wasd.up.isDown) {
-                    body.setVelocityY(-speed);
-                } else if (this.cursors.down.isDown || this.wasd.down.isDown) {
-                    body.setVelocityY(speed);
-                }
+      startGame() {
+        isGameOver = false;
+        gameTime = 0;
+        timeDisplay.textContent = '0';
 
-                // 同步玩家文字位置
-                this.playerText.setPosition(this.player.x, this.player.y);
-            }
+        ballSpawnTimer = this.time.addEvent({
+          delay: CONFIG.ballSpawnInterval,
+          callback: this.spawnBall,
+          callbackScope: this,
+          loop: true
+        });
 
-            setupGyroscope() {
-                const self = this;
+        if (gameTimeTimer) clearInterval(gameTimeTimer);
+        gameTimeTimer = setInterval(() => {
+          if (!isGameOver) {
+            gameTime++;
+            timeDisplay.textContent = gameTime;
+            this.checkGameEvents();
+          }
+        }, 1000);
+      }
 
-                const handleOrientation = (event) => {
-                    if (isGameOver || !self.player) return;
+      spawnBall() {
+        if (isGameOver) return;
 
-                    let beta = event.beta;   // 前后 [-180, 180]
-                    let gamma = event.gamma; // 左右 [-90, 90]
+        const edge = Phaser.Math.Between(0, 3);
+        let x, y;
 
-                    if (beta === null || gamma === null) return;
-
-                    // 限制范围
-                    const maxTilt = 30;
-                    beta = Phaser.Math.Clamp(beta, -maxTilt, maxTilt);
-                    gamma = Phaser.Math.Clamp(gamma, -maxTilt, maxTilt);
-
-                    // 转换为速度
-                    const vx = (gamma / maxTilt) * CONFIG.playerSpeed;
-                    const vy = (beta / maxTilt) * CONFIG.playerSpeed;
-
-                    self.player.body.setVelocity(vx, vy);
-                };
-
-                // iOS 13+ 需要请求权限
-                if (typeof DeviceOrientationEvent !== 'undefined' &&
-                    typeof DeviceOrientationEvent.requestPermission === 'function') {
-                    document.body.addEventListener('click', () => {
-                        DeviceOrientationEvent.requestPermission()
-                            .then(response => {
-                                if (response === 'granted') {
-                                    window.addEventListener('deviceorientation', handleOrientation);
-                                }
-                            })
-                            .catch(console.error);
-                    }, { once: true });
-                } else {
-                    window.addEventListener('deviceorientation', handleOrientation);
-                }
-            }
-
-            startGame() {
-                isGameOver = false;
-                gameTime = 0;
-                timeDisplay.textContent = '0';
-
-                // 定时生成小球
-                ballSpawnTimer = this.time.addEvent({
-                    delay: CONFIG.ballSpawnInterval,
-                    callback: this.spawnBall,
-                    callbackScope: this,
-                    loop: true
-                });
-
-                // 计时器
-                gameTimeTimer = setInterval(() => {
-                    if (!isGameOver) {
-                        gameTime++;
-                        timeDisplay.textContent = gameTime;
-                    }
-                }, 1000);
-            }
-
-            spawnBall() {
-                if (isGameOver) return;
-
-                // 随机边缘位置
-                const edge = Phaser.Math.Between(0, 3);
-                let x, y;
-
-                switch (edge) {
-                    case 0: x = 0; y = Phaser.Math.Between(0, CONFIG.height); break;
-                    case 1: x = CONFIG.width; y = Phaser.Math.Between(0, CONFIG.height); break;
-                    case 2: x = Phaser.Math.Between(0, CONFIG.width); y = 0; break;
-                    case 3: x = Phaser.Math.Between(0, CONFIG.width); y = CONFIG.height; break;
-                }
-
-                // 随机颜色
-                const color = Phaser.Math.RND.pick(CONFIG.ballColors);
-
-                // 创建小球
-                const ball = this.add.circle(x, y, CONFIG.ballSize / 2, color);
-                this.physics.add.existing(ball);
-                this.balls.add(ball);
-
-                // 朝向玩家发射
-                const angle = Phaser.Math.Angle.Between(x, y, this.player.x, this.player.y);
-                const speed = CONFIG.ballSpeed + Phaser.Math.Between(0, 50);
-
-                ball.body.setVelocity(
-                    Math.cos(angle) * speed,
-                    Math.sin(angle) * speed
-                );
-                ball.body.setBounce(1);
-                ball.body.setCollideWorldBounds(true);
-
-                // 添加发光效果
-                ball.setAlpha(0.9);
-                this.tweens.add({
-                    targets: ball,
-                    alpha: 0.6,
-                    duration: 300,
-                    yoyo: true,
-                    repeat: -1
-                });
-            }
-
-            hitBall() {
-                if (isGameOver) return;
-                this.gameOver();
-            }
-
-            gameOver() {
-                isGameOver = true;
-
-                // 停止定时器
-                if (ballSpawnTimer) ballSpawnTimer.remove();
-                clearInterval(gameTimeTimer);
-
-                // 暂停物理
-                this.physics.pause();
-
-                // 玩家闪烁
-                this.tweens.add({
-                    targets: [this.player, this.playerText],
-                    alpha: 0,
-                    duration: 100,
-                    yoyo: true,
-                    repeat: 5
-                });
-
-                // 显示结果
-                setTimeout(() => {
-                    resultTime.textContent = `${gameTime} 秒`;
-                    resultMsg.textContent = getResultMessage(gameTime);
-                    restartBtn.style.display = 'block';
-                }, 600);
-            }
+        switch (edge) {
+          case 0: x = 0; y = Phaser.Math.Between(0, CONFIG.height); break;
+          case 1: x = CONFIG.width; y = Phaser.Math.Between(0, CONFIG.height); break;
+          case 2: x = Phaser.Math.Between(0, CONFIG.width); y = 0; break;
+          case 3: x = Phaser.Math.Between(0, CONFIG.width); y = CONFIG.height; break;
         }
 
-        // ==================== 结果评语 ====================
-        function getResultMessage(time) {
-            if (time >= 20) return '🏆 真男人！太强了！';
-            if (time >= 15) return '💪 不错，还差一点！';
-            if (time >= 10) return '😅 一般般，继续努力！';
-            if (time >= 5) return '😂 就这？再练练！';
-            return '💔 太快了吧...';
+        const color = Phaser.Math.RND.pick(CONFIG.ballColors);
+        const ball = this.add.circle(x, y, CONFIG.ballSize / 2, color);
+        this.physics.add.existing(ball);
+        this.balls.add(ball);
+
+        const angle = Phaser.Math.Angle.Between(x, y, this.player.x, this.player.y);
+        const speed = CONFIG.ballSpeed + Phaser.Math.Between(0, 50);
+
+        ball.body.setVelocity(
+          Math.cos(angle) * speed,
+          Math.sin(angle) * speed
+        );
+        ball.body.setBounce(1);
+        ball.body.setCollideWorldBounds(true);
+
+        ball.setAlpha(0.9);
+        this.tweens.add({
+          targets: ball,
+          alpha: 0.6,
+          duration: 300,
+          yoyo: true,
+          repeat: -1
+        });
+      }
+
+      hitBall() {
+        if (isGameOver) return;
+        this.gameOver();
+      }
+
+      gameOver() {
+        isGameOver = true;
+
+        if (ballSpawnTimer) ballSpawnTimer.remove();
+        clearInterval(gameTimeTimer);
+
+        this.physics.pause();
+
+        this.tweens.add({
+          targets: [this.player, this.playerText],
+          alpha: 0,
+          duration: 100,
+          yoyo: true,
+          repeat: 5
+        });
+
+        setTimeout(() => {
+          resultTime.textContent = `${gameTime} 秒`;
+          resultMsg.textContent = getResultMessage(gameTime);
+          restartBtn.style.display = 'block';
+        }, 600);
+      }
+    }
+
+    // ==================== 结果评语 ====================
+    function getResultMessage(time) {
+      if (time >= 30) return '👑 神一般的存在！';
+      if (time >= 20) return '🏆 真男人！爆炸都炸不死你！';
+      if (time >= 15) return '💪 不错，接近20秒了！';
+      if (time >= 10) return '😅 还可以，继续加油！';
+      if (time >= 5) return '😂 刚热身就结束了？';
+      return '💔 太快了吧...';
+    }
+
+    // ==================== Phaser 配置 ====================
+    const phaserConfig = {
+      type: Phaser.AUTO,
+      width: CONFIG.width,
+      height: CONFIG.height,
+      parent: 'game-canvas',
+      backgroundColor: '#24292F',
+      // 【关键修复】禁用音频系统，防止重启时的上下文错误
+      audio: {
+        noAudio: true
+      },
+      physics: {
+        default: 'arcade',
+        arcade: {
+          debug: false
         }
+      },
+      scene: GameScene,
+      scale: {
+        mode: Phaser.Scale.FIT,
+        autoCenter: Phaser.Scale.CENTER_BOTH
+      }
+    };
 
-        // ==================== Phaser 配置 ====================
-        const phaserConfig = {
-            type: Phaser.AUTO,
-            width: CONFIG.width,
-            height: CONFIG.height,
-            parent: 'game-canvas',
-            backgroundColor: '#24292F',
-            physics: {
-                default: 'arcade',
-                arcade: {
-                    debug: false
-                }
-            },
-            scene: GameScene,
-            scale: {
-                mode: Phaser.Scale.FIT,
-                autoCenter: Phaser.Scale.CENTER_BOTH
-            }
-        };
+    // ==================== 启动游戏 ====================
+    let game = null;
 
-        // ==================== 启动游戏 ====================
-        let game = null;
+    function startNewGame() {
+      if (game) {
+        game.destroy(true);
+      }
+      restartBtn.style.display = 'none';
+      game = new Phaser.Game(phaserConfig);
+    }
 
-        function startNewGame() {
-            if (game) {
-                game.destroy(true);
-            }
-            restartBtn.style.display = 'none';
-            game = new Phaser.Game(phaserConfig);
-        }
+    restartBtn.addEventListener('click', startNewGame);
+    window.addEventListener('load', startNewGame);
 
-        // 重新开始按钮
-        restartBtn.addEventListener('click', startNewGame);
-
-        // 页面加载完成后启动
-        window.addEventListener('load', startNewGame);
-
-    })();
-    </script>
+  })();
+</script>
 </body>
 </html>
