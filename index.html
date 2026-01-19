@@ -1,248 +1,443 @@
 ﻿<!DOCTYPE html>
-<html>
+<html lang="zh-CN">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no">
     <title>是男人坚持20秒</title>
-    <script src="crafty-min.js"></script>
-    <style type="text/css">
-        html, body{ margin:0; padding:0; overflow:hidden; height:100%; background-color:#3D4F63; }
-
-        #box{ position:absolute; top:50%; left:50%; margin:-160px 0 0 -160px; }
-
-        #restart{ position:fixed; left:50%; top:50%; margin:-90px 0 0 -130px; z-index:1; font-size:28px; width:260px; height:180px; font-weight:bold; border-width:0; background-color:rgba(230, 100, 80, 0.7); color:#FFFEFC; display:none; }
-
-        .pic{ width:1px; height:1px; }
-
-        .MAN{
-            text-align:center;
-            vertical-align:-5px;
-            border-radius:3px;
+    <!-- Phaser 3 - 最流行的 HTML5 游戏框架 -->
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.70.0/dist/phaser.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
         }
 
-        .MAN span{ position:relative; top:10px; }
-
-        .Collision{
-            border-radius:100%;
-            -webkit-animation:turn 1s linear 0ms infinite normal backwards;
-            animation:turn 1s linear 0ms 1 infinite backwards;
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #1a1a2e;
+            font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
         }
 
-        @-webkit-keyframes turn{
-            0%, 100%{
-                opacity:1;
-            }
-            50%{
-                opacity:0.5;
-            }
+        .game-container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
         }
 
-        @keyframes turn{
-            0%, 100%{
-                opacity:1;
-            }
-            50%{
-                opacity:0.5;
-            }
+        .header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            padding: 15px;
+            text-align: center;
+            color: #fff;
+            z-index: 100;
+            background: linear-gradient(180deg, rgba(0,0,0,0.6) 0%, transparent 100%);
+        }
+
+        .header h1 {
+            font-size: 1.4rem;
+            margin-bottom: 5px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+
+        .tips {
+            font-size: 0.85rem;
+            color: #adb5bd;
+        }
+
+        #game-canvas {
+            border-radius: 12px;
+            box-shadow: 0 10px 50px rgba(0,0,0,0.6);
+        }
+
+        .timer-display {
+            position: fixed;
+            bottom: 25px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 1.8rem;
+            color: #fff;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+            z-index: 100;
+        }
+
+        .timer-display span {
+            color: #ffd700;
+            font-weight: bold;
+            font-size: 2.2rem;
+        }
+
+        #restart-btn {
+            position: fixed;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 200;
+            width: 280px;
+            padding: 20px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            border: none;
+            border-radius: 16px;
+            background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+            color: #fff;
+            cursor: pointer;
+            display: none;
+            box-shadow: 0 10px 30px rgba(231, 76, 60, 0.5);
+            transition: all 0.2s ease;
+            line-height: 1.6;
+        }
+
+        #restart-btn:hover {
+            transform: translate(-50%, -50%) scale(1.05);
+            box-shadow: 0 15px 40px rgba(231, 76, 60, 0.6);
+        }
+
+        #restart-btn:active {
+            transform: translate(-50%, -50%) scale(0.98);
+        }
+
+        .result-time {
+            font-size: 2.5rem;
+            color: #ffd700;
+            display: block;
+            margin: 10px 0;
+        }
+
+        .result-msg {
+            font-size: 0.9rem;
+            color: rgba(255,255,255,0.8);
+            margin-top: 5px;
         }
     </style>
 </head>
 <body>
-<div style="position:fixed; top:3px; width:100%; z-index:2; color:#FFF; text-align:center;">
-    <h1 style="font-size:18px;">是男人坚持20秒</h1>
+    <div class="game-container">
+        <div class="header">
+            <h1>🎮 是男人坚持20秒</h1>
+            <p class="tips">📱 手机倾斜 / ⌨️ 方向键控制</p>
+        </div>
 
-    <div class="tips" style="text-align:center;">请放平手机，晃动她，躲避小球。</div>
-</div>
-<div id="box">
-    <div id="game"></div>
-</div>
-<button type="button" id="restart" onclick="restart();">再来</button>
+        <div id="game-canvas"></div>
 
-<pre id="output" class="output" style="position:fixed; right:5px; bottom:5px; background-color:#FFF; display:none;"></pre>
-<script>
+        <div class="timer-display">
+            ⏱️ <span id="time-display">0</span> 秒
+        </div>
+    </div>
 
-    var shareInfo = {
-        appid      : '',
-        imgUrl     : 'http://man.misuisui.com/man.jpg',
-        lineLink   : 'http://man.misuisui.com/',
-        descContent: '放平你的手机，调整你的心态，控制你的抖动，展显男人的坚持！',
-        shareTitle : '好男人坚持20秒不会让心爱的女人受一点点伤！'
-    };
-    var output = document.querySelector('.output');
-    var re = document.getElementById("restart");
-    Crafty.init(320, 320, document.getElementById("game"));
-    Crafty.background("#24292F");
+    <button type="button" id="restart-btn">
+        💪 再来一次！
+        <span class="result-time" id="result-time"></span>
+        <span class="result-msg" id="result-msg"></span>
+    </button>
 
-    var manX = 150;
-    var manY = 150;
-    var man = Crafty.e("MAN, 2D, DOM, Color, HTML, Fourway")
-            .attr({x: 150, y: 150, w: 20, h: 20})
-            .color("#fff")
-            .replace("<span>龍</span>")
-            .fourway(5)
-            .bind("EnterFrame", function () {
-                if (this.x > 300) {
-                    this.x = 300;
-                }
-                else if (this.y > 300) {
-                    this.y = 300;
-                }
-                else if (this.x < 0) {
-                    this.x = 0;
-                }
-                else if (this.y < 0) {
-                    this.y = 0;
-                }
-                manX = this.x;
-                manY = this.y;
-            });
+    <script>
+    /**
+     * 是男人坚持20秒 - Phaser 3 重制版
+     */
+    (function() {
+        'use strict';
 
-    var speed = 200;
-    var xy = [];
-    for (var i = 0; i <= 310; i = i + 10) {
-        xy.push([0, i]);
-        xy.push([310, i]);
-    }
-    var xyl = xy.length - 1;
-    var coA = ["#FF0000", "#FF7F00", "#FFFF00", "#00FF00", "#007FFF", "#00FFFF", "#FF00FF", "#FFFFFF"];
+        // ==================== 游戏配置 ====================
+        const CONFIG = {
+            width: 320,
+            height: 320,
+            playerSize: 22,
+            playerSpeed: 200,
+            ballSize: 12,
+            ballSpeed: 150,
+            ballSpawnInterval: 800,
+            ballColors: [0xFF0000, 0xFF7F00, 0xFFFF00, 0x00FF00, 0x007FFF, 0x00FFFF, 0xFF00FF, 0xFFFFFF]
+        };
 
-    function kill() {
-        var _txy = xy[Crafty.math.randomInt(0, xyl)];
-        var _eX = _txy[0];
-        var _eY = _txy[1];
-        var __dX = (manX - _eX) / speed;
-        var __dY = (manY - _eY) / speed;
-        var _color = coA[Crafty.math.randomInt(0, 7)];
+        // ==================== 游戏状态 ====================
+        let gameTime = 0;
+        let isGameOver = false;
+        let ballSpawnTimer = null;
+        let gameTimeTimer = null;
 
-        Crafty.e("2D, DOM, Color, Collision")
-                .attr({ x: _eX, y: _eY, w: 10, h: 10, dX: __dX, dY: __dY })
-                .color(_color)
-                .bind('EnterFrame', function () {
-//                    var _manX = manX;
-//                    var _manY = manY;
-//                    if (this.x > 310 || this.x < 0 || this.y > 310 || this.y < 0) {
-//                        var _txy = xy[Crafty.math.randomInt(0, xyl)];
-//                        this.x = _txy[0];
-//                        this.y = _txy[1];
-//                        this.dX = (_manX - _eX) / speed;
-//                        this.dY = (_manY - _eY) / speed;
-//                    }
-                    if (this.x > 310 || this.x < 0) {
-                        this.dX = -this.dX;
-                    } else if (this.y > 310 || this.y < 0) {
-                        this.dY = -this.dY;
-                    }
-                    this.x += this.dX;
-                    this.y += this.dY;
-                })
-                .onHit("MAN", function () {
-                    over();
+        // ==================== DOM 元素 ====================
+        const timeDisplay = document.getElementById('time-display');
+        const restartBtn = document.getElementById('restart-btn');
+        const resultTime = document.getElementById('result-time');
+        const resultMsg = document.getElementById('result-msg');
+
+        // ==================== 主游戏场景 ====================
+        class GameScene extends Phaser.Scene {
+            constructor() {
+                super({ key: 'GameScene' });
+                this.player = null;
+                this.balls = null;
+                this.cursors = null;
+                this.wasd = null;
+            }
+
+            create() {
+                // 设置背景
+                this.cameras.main.setBackgroundColor('#24292F');
+
+                // 创建玩家
+                this.player = this.add.rectangle(
+                    CONFIG.width / 2,
+                    CONFIG.height / 2,
+                    CONFIG.playerSize,
+                    CONFIG.playerSize,
+                    0xFFFFFF
+                );
+                this.physics.add.existing(this.player);
+                this.player.body.setCollideWorldBounds(true);
+
+                // 添加玩家文字
+                this.playerText = this.add.text(
+                    CONFIG.width / 2,
+                    CONFIG.height / 2,
+                    '龍',
+                    { fontSize: '14px', fontFamily: 'sans-serif', color: '#000' }
+                ).setOrigin(0.5);
+
+                // 创建小球组
+                this.balls = this.physics.add.group();
+
+                // 设置碰撞检测
+                this.physics.add.overlap(this.player, this.balls, this.hitBall, null, this);
+
+                // 键盘控制
+                this.cursors = this.input.keyboard.createCursorKeys();
+                this.wasd = this.input.keyboard.addKeys({
+                    up: Phaser.Input.Keyboard.KeyCodes.W,
+                    down: Phaser.Input.Keyboard.KeyCodes.S,
+                    left: Phaser.Input.Keyboard.KeyCodes.A,
+                    right: Phaser.Input.Keyboard.KeyCodes.D
                 });
-    }
 
-    var lv = setInterval("kill()", 1000);
-    var time = 0;
+                // 陀螺仪控制
+                this.setupGyroscope();
 
-    function times() {
-        time++;
-    }
+                // 开始游戏
+                this.startGame();
+            }
 
-    var ti = setInterval("times()", 1000);
+            update() {
+                if (isGameOver) return;
 
-    function over() {
-        clearInterval(lv);
-        clearInterval(ti);
-        setTimeout('Crafty.stop()', 0);
-        re.innerHTML = "好男人坚持了 " + time + " 秒让心爱的女人受了点伤！再来！";
-        re.style.display = "block";
-        shareInfo.shareTitle = "好男人坚持了" + time + "秒让心爱的女人受了点伤！";
-    }
+                const body = this.player.body;
+                const speed = CONFIG.playerSpeed;
 
-    function restart() {
-        location.replace(location.href);
-    }
+                // 重置速度
+                body.setVelocity(0);
 
-    function handleOrientation(event) {
-        var x = event.beta;  // In degree in the range [-180,180]
-        var y = event.gamma; // In degree in the range [-90,90]
+                // 键盘控制
+                if (this.cursors.left.isDown || this.wasd.left.isDown) {
+                    body.setVelocityX(-speed);
+                } else if (this.cursors.right.isDown || this.wasd.right.isDown) {
+                    body.setVelocityX(speed);
+                }
 
-        output.innerHTML = "beta : " + x + "\n";
-        output.innerHTML += "gamma: " + y + "\n";
+                if (this.cursors.up.isDown || this.wasd.up.isDown) {
+                    body.setVelocityY(-speed);
+                } else if (this.cursors.down.isDown || this.wasd.down.isDown) {
+                    body.setVelocityY(speed);
+                }
 
-        // Because we don't want to have the device upside down
-        // We constrain the x value to the range [-45,45]
-        if (x > 45) {
-            x = 45
+                // 同步玩家文字位置
+                this.playerText.setPosition(this.player.x, this.player.y);
+            }
+
+            setupGyroscope() {
+                const self = this;
+
+                const handleOrientation = (event) => {
+                    if (isGameOver || !self.player) return;
+
+                    let beta = event.beta;   // 前后 [-180, 180]
+                    let gamma = event.gamma; // 左右 [-90, 90]
+
+                    if (beta === null || gamma === null) return;
+
+                    // 限制范围
+                    const maxTilt = 30;
+                    beta = Phaser.Math.Clamp(beta, -maxTilt, maxTilt);
+                    gamma = Phaser.Math.Clamp(gamma, -maxTilt, maxTilt);
+
+                    // 转换为速度
+                    const vx = (gamma / maxTilt) * CONFIG.playerSpeed;
+                    const vy = (beta / maxTilt) * CONFIG.playerSpeed;
+
+                    self.player.body.setVelocity(vx, vy);
+                };
+
+                // iOS 13+ 需要请求权限
+                if (typeof DeviceOrientationEvent !== 'undefined' &&
+                    typeof DeviceOrientationEvent.requestPermission === 'function') {
+                    document.body.addEventListener('click', () => {
+                        DeviceOrientationEvent.requestPermission()
+                            .then(response => {
+                                if (response === 'granted') {
+                                    window.addEventListener('deviceorientation', handleOrientation);
+                                }
+                            })
+                            .catch(console.error);
+                    }, { once: true });
+                } else {
+                    window.addEventListener('deviceorientation', handleOrientation);
+                }
+            }
+
+            startGame() {
+                isGameOver = false;
+                gameTime = 0;
+                timeDisplay.textContent = '0';
+
+                // 定时生成小球
+                ballSpawnTimer = this.time.addEvent({
+                    delay: CONFIG.ballSpawnInterval,
+                    callback: this.spawnBall,
+                    callbackScope: this,
+                    loop: true
+                });
+
+                // 计时器
+                gameTimeTimer = setInterval(() => {
+                    if (!isGameOver) {
+                        gameTime++;
+                        timeDisplay.textContent = gameTime;
+                    }
+                }, 1000);
+            }
+
+            spawnBall() {
+                if (isGameOver) return;
+
+                // 随机边缘位置
+                const edge = Phaser.Math.Between(0, 3);
+                let x, y;
+
+                switch (edge) {
+                    case 0: x = 0; y = Phaser.Math.Between(0, CONFIG.height); break;
+                    case 1: x = CONFIG.width; y = Phaser.Math.Between(0, CONFIG.height); break;
+                    case 2: x = Phaser.Math.Between(0, CONFIG.width); y = 0; break;
+                    case 3: x = Phaser.Math.Between(0, CONFIG.width); y = CONFIG.height; break;
+                }
+
+                // 随机颜色
+                const color = Phaser.Math.RND.pick(CONFIG.ballColors);
+
+                // 创建小球
+                const ball = this.add.circle(x, y, CONFIG.ballSize / 2, color);
+                this.physics.add.existing(ball);
+                this.balls.add(ball);
+
+                // 朝向玩家发射
+                const angle = Phaser.Math.Angle.Between(x, y, this.player.x, this.player.y);
+                const speed = CONFIG.ballSpeed + Phaser.Math.Between(0, 50);
+
+                ball.body.setVelocity(
+                    Math.cos(angle) * speed,
+                    Math.sin(angle) * speed
+                );
+                ball.body.setBounce(1);
+                ball.body.setCollideWorldBounds(true);
+
+                // 添加发光效果
+                ball.setAlpha(0.9);
+                this.tweens.add({
+                    targets: ball,
+                    alpha: 0.6,
+                    duration: 300,
+                    yoyo: true,
+                    repeat: -1
+                });
+            }
+
+            hitBall() {
+                if (isGameOver) return;
+                this.gameOver();
+            }
+
+            gameOver() {
+                isGameOver = true;
+
+                // 停止定时器
+                if (ballSpawnTimer) ballSpawnTimer.remove();
+                clearInterval(gameTimeTimer);
+
+                // 暂停物理
+                this.physics.pause();
+
+                // 玩家闪烁
+                this.tweens.add({
+                    targets: [this.player, this.playerText],
+                    alpha: 0,
+                    duration: 100,
+                    yoyo: true,
+                    repeat: 5
+                });
+
+                // 显示结果
+                setTimeout(() => {
+                    resultTime.textContent = `${gameTime} 秒`;
+                    resultMsg.textContent = getResultMessage(gameTime);
+                    restartBtn.style.display = 'block';
+                }, 600);
+            }
         }
-        if (x < -45) {
-            x = -45
+
+        // ==================== 结果评语 ====================
+        function getResultMessage(time) {
+            if (time >= 20) return '🏆 真男人！太强了！';
+            if (time >= 15) return '💪 不错，还差一点！';
+            if (time >= 10) return '😅 一般般，继续努力！';
+            if (time >= 5) return '😂 就这？再练练！';
+            return '💔 太快了吧...';
         }
 
-        // To make computation easier we shift the range of
-        // x and y to [0,90]
-        x += 45;
-        y += 45;
+        // ==================== Phaser 配置 ====================
+        const phaserConfig = {
+            type: Phaser.AUTO,
+            width: CONFIG.width,
+            height: CONFIG.height,
+            parent: 'game-canvas',
+            backgroundColor: '#24292F',
+            physics: {
+                default: 'arcade',
+                arcade: {
+                    debug: false
+                }
+            },
+            scene: GameScene,
+            scale: {
+                mode: Phaser.Scale.FIT,
+                autoCenter: Phaser.Scale.CENTER_BOTH
+            }
+        };
 
-        // 10 is half the size of the ball
-        // It center the positionning point to the center of the ball
-        man.y = 300 * x / 90 - 10;
-        man.x = 300 * y / 90 - 10;
-    }
+        // ==================== 启动游戏 ====================
+        let game = null;
 
-    window.addEventListener('deviceorientation', handleOrientation);
+        function startNewGame() {
+            if (game) {
+                game.destroy(true);
+            }
+            restartBtn.style.display = 'none';
+            game = new Phaser.Game(phaserConfig);
+        }
 
-    function shareFriend() {
-        WeixinJSBridge.invoke('sendAppMessage', {
-            "appid"     : shareInfo.appid,
-            "img_url"   : shareInfo.imgUrl,
-            "img_width" : "200",
-            "img_height": "200",
-            "link"      : shareInfo.lineLink,
-            "desc"      : shareInfo.descContent,
-            "title"     : shareInfo.shareTitle
-        }, function (res) {
-            //_report('send_msg', res.err_msg);
-        })
-    }
+        // 重新开始按钮
+        restartBtn.addEventListener('click', startNewGame);
 
-    function shareTimeline() {
-        WeixinJSBridge.invoke('shareTimeline', {
-            "img_url"   : shareInfo.imgUrl,
-            "img_width" : "200",
-            "img_height": "200",
-            "link"      : shareInfo.lineLink,
-            "desc"      : shareInfo.descContent,
-            "title"     : shareInfo.shareTitle
-        }, function (res) {
-            //_report('timeline', res.err_msg);
-        });
-    }
+        // 页面加载完成后启动
+        window.addEventListener('load', startNewGame);
 
-    function shareWeibo() {
-        WeixinJSBridge.invoke('shareWeibo', {
-            "content": shareInfo.descContent,
-            "url"    : shareInfo.lineLink
-        }, function (res) {
-            //_report('weibo', res.err_msg);
-        });
-    }
-
-    // 当微信内置浏览器完成内部初始化后会触发WeixinJSBridgeReady事件。
-    document.addEventListener('WeixinJSBridgeReady', function onBridgeReady() {
-        // 发送给好友
-        WeixinJSBridge.on('menu:share:appmessage', function (argv) {
-            shareFriend();
-        });
-        // 分享到朋友圈
-        WeixinJSBridge.on('menu:share:timeline', function (argv) {
-            shareTimeline();
-        });
-        // 分享到微博
-        WeixinJSBridge.on('menu:share:weibo', function (argv) {
-            shareWeibo();
-        });
-    }, false);
-</script>
-<img src="man.jpg" class="pic">
+    })();
+    </script>
 </body>
 </html>
